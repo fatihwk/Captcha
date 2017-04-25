@@ -7,6 +7,8 @@ Captcha
 Installation
 ============
 
+Add Chinese Support 
+
 With composer :
 
 ``` json
