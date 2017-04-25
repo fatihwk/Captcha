@@ -3,6 +3,7 @@
 namespace Gregwar\Captcha;
 
 use \Exception;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Builds a new captcha image
@@ -73,7 +74,7 @@ class CaptchaBuilder implements CaptchaBuilderInterface
     /**
      * The maximum angle of char
      */
-    protected $maxAngle = 8;
+    protected $maxAngle = 30;
 
     /**
      * The maximum offset of char
@@ -312,6 +313,7 @@ class CaptchaBuilder implements CaptchaBuilderInterface
         }
     }
 
+
     /**
      * Writes the phrase on the image
      */
@@ -349,6 +351,176 @@ class CaptchaBuilder implements CaptchaBuilderInterface
 
         return $col;
     }
+
+    protected static  function hasChinese($str)
+    {
+        $pattern = '/[^\x00-\x80]/';
+        if(preg_match($pattern,$str)){
+           return true;
+        }
+
+        return false;
+    }
+
+
+    protected function writeChinesePhrase($image, $phrase, $font, $width, $height)
+    {
+        $fonts = array(__DIR__ . '/Font/happy.ttf',__DIR__ . '/Font/kangti.ttf' ,__DIR__ . '/Font/msyh.ttf');
+
+        $font = $fonts[rand(0,count($fonts)-1)];
+
+        $length = self::cstrlen($phrase);
+        if ($length === 0) {
+            return imagecolorallocate($image, 0, 0, 0);
+        }
+
+        Log::debug("cstrlen string length ".$length);
+
+        // Gets the text size and start position
+        $size = $width / $length - $this->rand(-3, 0) - 1;
+        $box = imagettfbbox($size, 0, $font, $phrase);
+        $textWidth = $box[2] - $box[0];
+        $textHeight = $box[1] - $box[7];
+        Log::debug (" width is ".$width." text width ".$textWidth);
+        $x = ($width - $textWidth) / 2 ;
+        $y =  ($height + $textHeight) / 2 ; //+ $size+10;
+        //Log::debug ( "y pos is ".$y." max offset ".$this->maxOffset. " height ".$height."  text height ".$textHeight);
+
+
+        if (!count($this->textColor)) {
+            $textColor = array($this->rand(0, 150), $this->rand(0, 150), $this->rand(0, 150));
+        } else {
+            $textColor = $this->textColor;
+        }
+        $col = imagecolorallocate($image, $textColor[0], $textColor[1], $textColor[2]);
+
+        // Write the letters one by one, with random angle
+//        for ($i=0; $i<$length; $i++) {
+//            $box = imagettfbbox($size, 0, $font, $phrase[$i]);
+//            $w = $box[2] - $box[0];
+//            $angle = $this->rand(-$this->maxAngle, $this->maxAngle);
+//            $offset = $this->rand(-$this->maxOffset, $this->maxOffset);
+//            imagettftext($image, $size, $angle, $x, $y + $offset, $col, $font, $phrase[$i]);
+//            $x += $w;
+//        }
+
+
+
+        $xGap = $textWidth/(self::cstrlen($phrase)+10);
+        //$xGap=0;
+
+
+
+        $strLen  = self::getStringLength($phrase);
+
+        Log::debug("string length ".$strLen);
+        Log::debug(" text width".$textWidth);
+        for($i=0; $i<$strLen; $i++) {
+
+
+            $ch =  self::csubstr($phrase, $i, 1);
+            Log::debug (" phrase code is ".$ch);
+
+
+            $box = imagettfbbox($size, 0, $font, $ch);
+            $w = $box[2] - $box[0];
+            $angle = $this->rand(-$this->maxAngle, $this->maxAngle);
+            $offset = $this->rand(-$this->maxOffset, $this->maxOffset);
+
+            $xGap = ($textWidth-$strLen*$w)/$strLen;
+
+            $xGap = $xGap <0 ?0:$xGap;
+
+            Log::debug(" x gap is ".$xGap);
+
+            Log::debug("create captcha size :".$size." angle ".$angle." x ".$x."  y ".($y+$offset)." text is ".$ch);
+            imagettftext($image,
+                $size,
+                $angle,
+                $x,
+                $y ,
+                $col,
+                $font,
+                $ch
+            );
+            $x += $w+$xGap  ;
+
+        }
+
+
+        for ($i=0;$i<=20;$i++) { //dot
+            $pixel = imagecolorallocate($image, mt_rand(0,255), mt_rand(0,255), mt_rand(0,255));
+            imagesetpixel($image, mt_rand(0,$width), mt_rand(0,$height), $pixel);
+        }
+//        for($i=0; $i <2; $i++) { //line
+//            $lineColor = imagecolorallocate($image, mt_rand(0,255), mt_rand(0,255), mt_rand(0,255));
+//            $lefty = mt_rand(1, $width-1);
+//            $righty = mt_rand(1, $height-1);
+//            imageline($image, 0, $lefty, imagesx($image), $righty, $lineColor);
+//        }
+
+
+
+        return $col;
+    }
+
+
+
+    //get string length
+    private static function getStringLength($code )
+    {
+        return mb_strlen($code);
+
+
+//        if(preg_match("/^[0-9a-zA-Z]+$/", $code)) {
+//            $strType= 1;
+//
+//        } elseif(preg_match("/^[\x{4e00}-\x{9fa5}]+$/u",$code)) {
+//            $strType = 2;
+//
+//        } else {
+//            $strType= self::hasChinese($code)?2:1;
+//        }
+//
+//        return ($strType == 1) ? strlen($code) : self::cstrlen($code) / 2;
+    }
+
+
+    /**
+     * strlen for chinese
+     * @param  string $string
+     * @return int
+     */
+    private static function cstrlen($string)
+    {
+        if( empty($string) )
+            return 0;
+        return (strlen($string) + mb_strlen($string, 'UTF8')) / 2;
+    }
+
+    /**
+     * substr for chinese
+     * @param   string      $str
+     * @param   int         $start
+     * @param   int         $len
+     * @param   bool        $append
+     * @return  string
+     */
+    private static function csubstr($str, $start = 0, $length, $append = '')
+    {
+        if(function_exists("mb_substr")) {
+            if(mb_strlen($str, 'utf-8') <= $length) return $str;
+            $slice = mb_substr($str, $start, $length, 'utf-8');
+        } else {
+            $re = "/[\x01-\x7f]|[\xc2-\xdf][\x80-\xbf]|[\xe0-\xef][\x80-\xbf]{2}|[\xf0-\xff][\x80-\xbf]{3}/";
+            preg_match_all($re, $str, $match);
+            if(count($match[0]) <= $length) return $str;
+            $slice = join("",array_slice($match[0], $start, $length));
+        }
+        return $slice.$append;
+    }
+
+
 
     /**
      * Try to read the code against an OCR
@@ -437,7 +609,14 @@ class CaptchaBuilder implements CaptchaBuilderInterface
         }
 
         // Write CAPTCHA text
-        $color = $this->writePhrase($image, $this->phrase, $font, $width, $height);
+        if (self::hasChinese($this->phrase))
+        {
+            $color = $this->writeChinesePhrase($image,$this->phrase,$font,$width,$height);
+        }else
+        {
+            $color = $this->writePhrase($image, $this->phrase, $font, $width, $height);
+        }
+
 
         // Apply effects
         if (!$this->ignoreAllEffects) {
